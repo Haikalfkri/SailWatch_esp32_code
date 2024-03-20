@@ -9,8 +9,8 @@
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
-#define WIFI_SSID "vivo 1806"
-#define WIFI_PASSWORD "123456789Satu"
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
 #define API_KEY "AIzaSyBpJQsE-cSkOpIj3uJ0DGDQayOOp-5Jo8k"
 #define DATABASE_URL "https://sailwatch-cdd16-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
