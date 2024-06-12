@@ -4,6 +4,9 @@
 #include "addons/RTDBHelper.h"
 #include <DHT.h>
 #include <TinyGPSPlus.h>
+#include <Wire.h>
+#include <Adafruit_BMP085.h>
+#include <SoftwareSerial.h>
 
 // Define sensor pins and types
 #define DHT_PIN 23
@@ -13,8 +16,8 @@
 #define ANEMOMETER_PIN 19
 
 // Wi-Fi credentials
-#define WIFI_SSID "h"
-#define WIFI_PASSWORD "123456789Satu"
+#define WIFI_SSID "SITUMORANG"
+#define WIFI_PASSWORD "paktumblokq11"
 
 // Firebase API key and database URL
 #define API_KEY "AIzaSyBGnS0sO6KXRKL-k1Eb8WJJOAebLQYMLyw"
@@ -23,6 +26,8 @@
 // Initialize sensors
 DHT dht(DHT_PIN, DHT_TYPE);
 TinyGPSPlus gps;
+Adafruit_BMP085 bmp;
+SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
 
 // Firebase objects
 FirebaseData fbdo;
@@ -31,41 +36,54 @@ FirebaseConfig config;
 
 // Timer to control data sending frequency
 unsigned long sendDataPrevMillis = 0;
-unsigned long anemometerPrevMillis = 0;
 
 // Variables to hold latitude and longitude
 float latitude = 0.0;
 float longitude = 0.0;
+float windSpeedMph = 0.0;
 
 // Variables for wind speed calculation
-volatile unsigned int windCounter = 0;
-const float RADIUS_CM = 9.0; // Radius of the anemometer in centimeters
-#define PI 3.1415926535897932384626433832795
+volatile unsigned long windPulseCount = 0;
+unsigned long lastWindCheck = 0;
+const unsigned long WIND_MEASUREMENT_INTERVAL = 5000; // 5 seconds
+const float ANEMOMETER_CALIBRATION_FACTOR = 2.23694; // Adjust this based on your anemometer
+
+// Debounce parameters
+volatile unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 15; // Debounce delay in milliseconds
 
 // Function declarations
 void connectToWiFi();
 void initializeFirebase();
-void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeed);
-void IRAM_ATTR handleAnemometerInterrupt();
+void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeedMph, float pressure, float altitude);
+void IRAM_ATTR handleWindPulse();
 
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  gpsSerial.begin(9600);
+
+  // Initialize pressure sensor (bmp180)
+  Serial.println("Initializing Pressure sensor...");
+  if (!bmp.begin()) {
+    Serial.println("Could not find a valid BMP085 sensor, check wiring!");
+    while (1) {}
+  }
+  Serial.println("Pressure sensor initialized.");
 
   // Initialize DHT sensor
   Serial.println("Initializing DHT sensor...");
   dht.begin();
   Serial.println("DHT sensor initialized.");
 
+  // Set anemometer pin as input and attach interrupt
+  pinMode(ANEMOMETER_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), handleWindPulse, FALLING);
+
   // Connect to Wi-Fi
   connectToWiFi();
 
   // Initialize Firebase
   initializeFirebase();
-
-  // Set up anemometer pin and interrupt
-  pinMode(ANEMOMETER_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), handleAnemometerInterrupt, FALLING);
 }
 
 void loop() {
@@ -100,21 +118,43 @@ void loop() {
     }
 
     // Calculate wind speed
-    float windSpeed = 0.0;
-    if (millis() - anemometerPrevMillis >= 1000) {
-      detachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN));
-      float revolutionsPerSecond = windCounter;
-      windSpeed = (revolutionsPerSecond * 2 * PI * RADIUS_CM) / 100; // cm/s to m/s
-      windCounter = 0;
-      anemometerPrevMillis = millis();
-      attachInterrupt(digitalPinToInterrupt(ANEMOMETER_PIN), handleAnemometerInterrupt, FALLING);
+    unsigned long currentTime = millis();
+    if (currentTime - lastWindCheck >= WIND_MEASUREMENT_INTERVAL) {
+      // Calculate wind speed in mph
+      float windSpeed = (windPulseCount / 2.0) * ANEMOMETER_CALIBRATION_FACTOR * (1.0 / (WIND_MEASUREMENT_INTERVAL / 1000.0)); // mph
+      windSpeedMph = windSpeed;
+
+      // Reset wind pulse count and last wind check time
+      windPulseCount = 0;
+      lastWindCheck = currentTime;
+
+      Serial.print("Wind Speed: ");
+      Serial.print(windSpeedMph, 1);
+      Serial.println(" mph");
     }
 
-    Serial.print("Wind Speed: ");
-    Serial.print(windSpeed);
-    Serial.println(" m/s");
+    // Read pressure
+    float pressure = bmp.readPressure();
+    Serial.print("Pressure: ");
+    Serial.print(pressure);
+    Serial.println(" Pa");
 
-    sendDataToFirebase(humidity, temperature, latitude, longitude, windSpeed);
+    // Read altitude
+    float altitude = bmp.readAltitude();
+    Serial.print("Altitude: ");
+    Serial.print(altitude);
+    Serial.println(" Meters");
+
+    sendDataToFirebase(humidity, temperature, latitude, longitude, windSpeedMph, pressure, altitude);
+  }
+}
+
+// Interrupt Service Routine for wind speed pulse
+void IRAM_ATTR handleWindPulse() {
+  unsigned long currentTime = millis();
+  if (currentTime - lastDebounceTime > debounceDelay) {
+    windPulseCount++;
+    lastDebounceTime = currentTime;
   }
 }
 
@@ -148,7 +188,7 @@ void initializeFirebase() {
 }
 
 // Send sensor data to Firebase
-void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeed) {
+void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeedMph, float pressure, float altitude) {
   // Send humidity data
   if (Firebase.RTDB.setFloat(&fbdo, "Sensor/humidity", humidity)) {
     Serial.print("Humidity: ");
@@ -190,17 +230,32 @@ void sendDataToFirebase(float humidity, float temperature, float latitude, float
   }
 
   // Send wind speed data
-  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/windSpeed", windSpeed)) {
+  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/windSpeed", windSpeedMph)) {
     Serial.print("Wind Speed: ");
-    Serial.print(windSpeed);
-    Serial.println(" m/s - Successfully saved to Firebase");
+    Serial.print(windSpeedMph);
+    Serial.println(" mph - Successfully saved to Firebase");
   } else {
     Serial.print("Failed to save wind speed: ");
     Serial.println(fbdo.errorReason());
   }
-}
 
-// Interrupt service routine for anemometer
-void IRAM_ATTR handleAnemometerInterrupt() {
-  windCounter++;
+  // Send pressure data
+  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/pressure", pressure)) {
+    Serial.print("Pressure: ");
+    Serial.print(pressure);
+    Serial.println(" Pa - Successfully saved to Firebase");
+  } else {
+    Serial.print("Failed to save pressure: ");
+    Serial.println(fbdo.errorReason());
+  }
+
+  // Send altitude data
+  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/altitude", altitude)) {
+    Serial.print("Altitude: ");
+    Serial.print(altitude);
+    Serial.println(" Meters - Successfully saved to Firebase");
+  } else {
+    Serial.print("Failed to save altitude: ");
+    Serial.println(fbdo.errorReason());
+  }
 }
