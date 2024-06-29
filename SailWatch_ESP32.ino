@@ -3,21 +3,21 @@
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 #include <DHT.h>
-#include <TinyGPSPlus.h>
+// #include <TinyGPSPlus.h>
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
 #include <SoftwareSerial.h>
 
 // Define sensor pins and types
 #define DHT_PIN 23
-#define DHT_TYPE DHT22
+#define DHT_TYPE DHT11
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
 #define ANEMOMETER_PIN 19
 
 // Wi-Fi credentials
-#define WIFI_SSID "SITUMORANG"
-#define WIFI_PASSWORD "paktumblokq11"
+#define WIFI_SSID "h"
+#define WIFI_PASSWORD "123456789Satu"
 
 // Firebase API key and database URL
 #define API_KEY "AIzaSyBGnS0sO6KXRKL-k1Eb8WJJOAebLQYMLyw"
@@ -25,7 +25,7 @@
 
 // Initialize sensors
 DHT dht(DHT_PIN, DHT_TYPE);
-TinyGPSPlus gps;
+// TinyGPSPlus gps;
 Adafruit_BMP085 bmp;
 SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
 
@@ -38,24 +38,24 @@ FirebaseConfig config;
 unsigned long sendDataPrevMillis = 0;
 
 // Variables to hold latitude and longitude
-float latitude = 0.0;
-float longitude = 0.0;
+// float latitude = 0.0;
+// float longitude = 0.0;
 float windSpeedMph = 0.0;
 
 // Variables for wind speed calculation
 volatile unsigned long windPulseCount = 0;
 unsigned long lastWindCheck = 0;
-const unsigned long WIND_MEASUREMENT_INTERVAL = 5000; // 5 seconds
-const float ANEMOMETER_CALIBRATION_FACTOR = 2.23694; // Adjust this based on your anemometer
+const unsigned long WIND_MEASUREMENT_INTERVAL = 5000;  // 5 seconds
+const float ANEMOMETER_CALIBRATION_FACTOR = 2.23694;   // Adjust this based on your anemometer
 
 // Debounce parameters
 volatile unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 15; // Debounce delay in milliseconds
+const unsigned long debounceDelay = 15;  // Debounce delay in milliseconds
 
 // Function declarations
 void connectToWiFi();
 void initializeFirebase();
-void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeedMph, float pressure, float altitude);
+void sendDataToFirebase(float humidity, float temperature, float windSpeedMph, float pressure, float altitude);
 void IRAM_ATTR handleWindPulse();
 
 void setup() {
@@ -92,14 +92,14 @@ void loop() {
     sendDataPrevMillis = millis();
 
     // Read GPS data
-    while (Serial1.available() > 0) {
-      if (gps.encode(Serial1.read())) {
-        if (gps.location.isValid()) {
-          latitude = gps.location.lat();
-          longitude = gps.location.lng();
-        }
-      }
-    }
+    // while (Serial1.available() > 0) {
+    //   if (gps.encode(Serial1.read())) {
+    //     if (gps.location.isValid()) {
+    //       latitude = gps.location.lat();
+    //       longitude = gps.location.lng();
+    //     }
+    //   }
+    // }
 
     // Read humidity and temperature
     float humidity = dht.readHumidity();
@@ -121,7 +121,7 @@ void loop() {
     unsigned long currentTime = millis();
     if (currentTime - lastWindCheck >= WIND_MEASUREMENT_INTERVAL) {
       // Calculate wind speed in mph
-      float windSpeed = (windPulseCount / 2.0) * ANEMOMETER_CALIBRATION_FACTOR * (1.0 / (WIND_MEASUREMENT_INTERVAL / 1000.0)); // mph
+      float windSpeed = (windPulseCount / 2.0) * ANEMOMETER_CALIBRATION_FACTOR * (1.0 / (WIND_MEASUREMENT_INTERVAL / 1000.0));  // mph
       windSpeedMph = windSpeed;
 
       // Reset wind pulse count and last wind check time
@@ -145,7 +145,7 @@ void loop() {
     Serial.print(altitude);
     Serial.println(" Meters");
 
-    sendDataToFirebase(humidity, temperature, latitude, longitude, windSpeedMph, pressure, altitude);
+    sendDataToFirebase(humidity, temperature, windSpeedMph, pressure, altitude);
   }
 }
 
@@ -177,10 +177,10 @@ void connectToWiFi() {
 void initializeFirebase() {
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
-  config.token_status_callback = tokenStatusCallback; // Optional but useful for debugging
+  config.token_status_callback = tokenStatusCallback;  // Optional but useful for debugging
 
   // Set authentication credentials
-  auth.user.email = "sensor@gmail.com";
+  auth.user.email = "sensor1@gmail.com";
   auth.user.password = "sensor123456";
 
   Firebase.begin(&config, &auth);
@@ -188,7 +188,7 @@ void initializeFirebase() {
 }
 
 // Send sensor data to Firebase
-void sendDataToFirebase(float humidity, float temperature, float latitude, float longitude, float windSpeedMph, float pressure, float altitude) {
+void sendDataToFirebase(float humidity, float temperature, float windSpeedMph, float pressure, float altitude) {
   // Send humidity data
   if (Firebase.RTDB.setFloat(&fbdo, "Sensor/humidity", humidity)) {
     Serial.print("Humidity: ");
@@ -210,24 +210,24 @@ void sendDataToFirebase(float humidity, float temperature, float latitude, float
   }
 
   // Send latitude data
-  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/latitude", latitude)) {
-    Serial.print("Latitude: ");
-    Serial.print(latitude);
-    Serial.println(" - Successfully saved to Firebase");
-  } else {
-    Serial.print("Failed to save latitude: ");
-    Serial.println(fbdo.errorReason());
-  }
+  // if (Firebase.RTDB.setFloat(&fbdo, "Sensor/latitude", latitude)) {
+  //   Serial.print("Latitude: ");
+  //   Serial.print(latitude);
+  //   Serial.println(" - Successfully saved to Firebase");
+  // } else {
+  //   Serial.print("Failed to save latitude: ");
+  //   Serial.println(fbdo.errorReason());
+  // }
 
-  // Send longitude data
-  if (Firebase.RTDB.setFloat(&fbdo, "Sensor/longitude", longitude)) {
-    Serial.print("Longitude: ");
-    Serial.print(longitude);
-    Serial.println(" - Successfully saved to Firebase");
-  } else {
-    Serial.print("Failed to save longitude: ");
-    Serial.println(fbdo.errorReason());
-  }
+  // // Send longitude data
+  // if (Firebase.RTDB.setFloat(&fbdo, "Sensor/longitude", longitude)) {
+  //   Serial.print("Longitude: ");
+  //   Serial.print(longitude);
+  //   Serial.println(" - Successfully saved to Firebase");
+  // } else {
+  //   Serial.print("Failed to save longitude: ");
+  //   Serial.println(fbdo.errorReason());
+  // }
 
   // Send wind speed data
   if (Firebase.RTDB.setFloat(&fbdo, "Sensor/windSpeed", windSpeedMph)) {
